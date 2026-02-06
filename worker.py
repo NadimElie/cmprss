@@ -1,68 +1,57 @@
 import os
 import time
-import subprocess
 import redis
-from rq import Worker
+import subprocess
+import logging
 
-# CONFIG
-REDIS_HOST = os.getenv('REDIS_HOST', 'redis-service')
-REDIS_PORT = 6379
+# --- GOLD STANDARD: Load Config from Vault ---
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
+# Connect to Redis
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
+logging.basicConfig(level=logging.INFO)
+
+def update_job_status(job_id, percent, status_text):
+    key = f"job:{job_id}"
+    r.hset(key, mapping={"percent": percent, "status": status_text})
+    r.expire(key, 600)
 
 def compress_pdf(file_path, job_id):
-    output_path = file_path.replace("/uploads/", "/processed/")
-    
-    # The "Safe" Command for Slim Containers
-    # -dPDFSETTINGS=/ebook : Good quality (150dpi), usually 50-80% reduction
-    cmd = [
-        "gs", 
-        "-sDEVICE=pdfwrite", 
-        "-dCompatibilityLevel=1.4", 
-        "-dPDFSETTINGS=/ebook",
-        "-dNOPAUSE", "-dQUIET", "-dBATCH", "-dSAFER",
-        f"-sOutputFile={output_path}",
-        file_path
-    ]
-    
-    print(f"Starting Job {job_id}...")
-    
     try:
-        # Run Ghostscript
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        logging.info(f"Starting job {job_id}")
+        update_job_status(job_id, 10, "Initializing Worker...")
+
+        output_path = file_path.replace(".pdf", "_compressed.pdf")
         
-        # Check if GS failed
-        if result.returncode != 0:
-            print(f"❌ CRASH: {result.stderr}")
-            with open(output_path, "w") as f:
-                f.write(f"Error: Compression failed. {result.stderr}")
+        # Ghostscript Command
+        gs_command = [
+            "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
+            "-dPDFSETTINGS=/screen", "-dNOPAUSE", "-dQUIET", "-dBATCH",
+            f"-sOutputFile={output_path}", file_path
+        ]
+
+        update_job_status(job_id, 50, "Compressing PDF (Heavy Lift)...")
+        subprocess.run(gs_command, check=True)
+
+        update_job_status(job_id, 90, "Finalizing Output...")
+        
+        if os.path.exists(output_path):
+             update_job_status(job_id, 100, "Done")
+             return output_path
         else:
-            # Check for silent failures (Empty files)
-            if os.path.exists(output_path) and os.path.getsize(output_path) < 1000:
-                 print(f"❌ FILE TOO SMALL (Likely Corrupt)")
-                 with open(output_path, "w") as f:
-                    f.write("Error: Resulting file was empty/corrupt.")
-            else:
-                print(f"Job {job_id} Done. Output saved to {output_path}")
+             raise Exception("Output file not generated")
 
     except Exception as e:
-        print(f"❌ PYTHON ERROR: {str(e)}")
+        logging.error(f"Job {job_id} failed: {e}")
+        update_job_status(job_id, 0, f"Error: {str(e)}")
+        return None
 
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    
-    return output_path
-
-if __name__ == '__main__':
-    print("Worker initializing...")
-    redis_conn = None
-    while redis_conn is None:
-        try:
-            r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
-            if r.ping():
-                print("Connected to Redis!")
-                redis_conn = r
-        except Exception:
-            time.sleep(5)
-
-    print("Starting Worker Loop...")
-    worker = Worker(['default'], connection=redis_conn)
-    worker.work()
+if __name__ == "__main__":
+    logging.info(f"Worker started. Listening on {REDIS_HOST}...")
+    while True:
+        job = r.brpop("pdf_queue", 0)
+        if job:
+            job_data = job[1].decode('utf-8')
+            job_id, file_path = job_data.split("::")
+            compress_pdf(file_path, job_id)

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cmprss-worker
+  namespace: default
+  labels:
+    app: cmprss-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cmprss-worker
+  template:
+    metadata:
+      labels:
+        app: cmprss-worker
+    spec:
+      containers:
+      - name: worker
+        image: docker.io/nadimelie/cmprss:v2
+        imagePullPolicy: Always
+        command: ["python", "worker.py"]
+        env:
+        - name: REDIS_HOST
+          valueFrom:
+            secretKeyRef:
+              name: cmprss-config
+              key: redis-host
+        volumeMounts:
+        - mountPath: /data
+          name: data-volume
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: pdf-data-pvc

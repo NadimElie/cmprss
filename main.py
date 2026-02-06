@@ -1,64 +1,62 @@
-from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-import shutil
 import os
 import uuid
-from redis import Redis
-from rq import Queue
+from flask import Flask, request, render_template, jsonify, send_file
+import redis
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Setup Folders
-UPLOAD_DIR = "/data/uploads"
-PROCESSED_DIR = "/data/processed"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(PROCESSED_DIR, exist_ok=True)
+# --- GOLD STANDARD: Configuration ---
+UPLOAD_FOLDER = '/data/uploads'
+PROCESSED_FOLDER = '/data/processed'
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 
-# Templates
-templates = Jinja2Templates(directory="templates")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
-# Redis Queue
-redis_conn = Redis(host=os.getenv("REDIS_HOST", "redis-service"), port=6379)
-q = Queue(connection=redis_conn)
+r = redis.Redis(host=REDIS_HOST, port=6379, db=0)
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    # Generate unique ID
-    job_id = str(uuid.uuid4())
-    filename = f"{job_id}.pdf"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    
-    # Save Upload
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Send to Worker
-    q.enqueue("worker.compress_pdf", file_path, job_id, job_id=job_id)
-    
-    return {"job_id": job_id, "status": "processing"}
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
 
-@app.get("/status/{job_id}")
-async def check_status(job_id: str):
-    job = q.fetch_job(job_id)
-    if job and job.get_status() == "finished":
-        return {"status": "done", "download_url": f"/download/{job_id}"}
-    return {"status": "processing"}
+    if file:
+        job_id = str(uuid.uuid4())
+        filename = f"{job_id}.pdf"
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(save_path)
 
-@app.get("/download/{job_id}")
-async def download(job_id: str):
-    file_path = os.path.join(PROCESSED_DIR, f"{job_id}.pdf")
+        r.hset(f"job:{job_id}", mapping={"percent": 0, "status": "Queued"})
+        r.lpush("pdf_queue", f"{job_id}::{save_path}")
+
+        return jsonify({"job_id": job_id})
+
+@app.route('/status/<job_id>', methods=['GET'])
+def check_status(job_id):
+    key = f"job:{job_id}"
+    if not r.exists(key):
+        return jsonify({"percent": 0, "status": "Unknown Job"}), 404
+
+    data = r.hgetall(key)
+    percent = int(data.get(b'percent', 0))
+    status = data.get(b'status', b'Unknown').decode('utf-8')
+    return jsonify({"percent": percent, "status": status})
+
+@app.route('/download/<job_id>', methods=['GET'])
+def download_file(job_id):
+    filename = f"{job_id}_compressed.pdf"
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(file_path):
-        return FileResponse(file_path, filename="compressed.pdf")
-    return {"error": "File not found"}
+        return send_file(file_path, as_attachment=True, download_name="compressed.pdf")
+    else:
+        return "File not found.", 404
 
-# --- THE LAUNCHER BLOCK ---
-if __name__ == "__main__":
-    import uvicorn
-    # This tells Python to start the server on Port 8000
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000)

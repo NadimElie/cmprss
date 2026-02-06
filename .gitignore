@@ -1,0 +1,16 @@
+# Secrets and Keys
+.env
+.cloudflared/
+*.json
+*.pem
+*.key
+secrets/
+
+# Python Junk
+__pycache__/
+*.py[cod]
+venv/
+
+# System Junk
+.DS_Store
+k3s-cmprss.yaml

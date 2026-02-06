@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cmprss-web
+  namespace: default
+  labels:
+    app: cmprss-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cmprss-web
+  template:
+    metadata:
+      labels:
+        app: cmprss-web
+    spec:
+      containers:
+      - name: web
+        image: docker.io/nadimelie/cmprss:v2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        env:
+        - name: REDIS_HOST
+          valueFrom:
+            secretKeyRef:
+              name: cmprss-config
+              key: redis-host
+        volumeMounts:
+        - mountPath: /data
+          name: data-volume
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: pdf-data-pvc
