@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pdf-janitor
+spec:
+  schedule: "0 * * * *"  # Run every hour at minute 0
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: cleaner
+            image: busybox   # A tiny tool, not your heavy python image
+            args:
+            - /bin/sh
+            - -c
+            - "find /data/uploads /data/processed -type f -mmin +60 -delete && echo 'Cleaned old files'"
+            volumeMounts:
+            - name: data-volume
+              mountPath: /data
+          restartPolicy: OnFailure
+          volumes:
+          - name: data-volume
+            persistentVolumeClaim:
+              claimName: pdf-data-pvc

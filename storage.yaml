@@ -1,0 +1,41 @@
+# 1. Define a "Storage Class" for local files
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: manual
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate
+
+---
+# 2. Define the Physical Volume (The Infrastructure)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pdf-data-pv
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/var/lib/cmprss-data" # The physical path on your Mac
+
+---
+# 3. Define the Claim (The Application's Request)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pdf-data-pvc
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  selector:
+    matchLabels:
+      type: local # Binds specifically to the PV above
