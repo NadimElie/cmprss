@@ -17,10 +17,10 @@ spec:
     spec:
       containers:
       - name: web
-        image: docker.io/nadimelie/cmprss:v2
+        image: docker.io/nadimelie/cmprss:v19
         imagePullPolicy: Always
         ports:
-        - containerPort: 8000
+        - containerPort: 5000
         env:
         - name: REDIS_HOST
           valueFrom:

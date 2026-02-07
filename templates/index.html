@@ -1,74 +1,133 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- cmprss-build: v17 -->
     <title>CMPRSS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; background: #f4f4f4; }
+        body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; background: #f4f4f4; }
         .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h1 { margin-bottom: 10px; }
         .upload-box { border: 2px dashed #ddd; padding: 30px; border-radius: 8px; margin: 20px 0; }
-        button { background: black; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
+        button { background: black; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; }
         button:disabled { background: #ccc; }
-        #status { margin-top: 20px; font-weight: bold; color: #333; }
-        a.download-btn { display: inline-block; background: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 10px; }
+        #status { margin-top: 20px; font-weight: bold; }
+        .download-btn { display: inline-block; background: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 10px; }
+        .progress-wrap { display: none; width: 100%; max-width: 280px; height: 10px; margin: 12px auto 6px; background: #e0e0e0; border-radius: 5px; overflow: hidden; }
+        .progress-wrap.visible { display: block; }
+        .progress-fill { height: 100%; width: 0%; background: #0070f3; border-radius: 5px; transition: width 0.35s ease; }
+        .progress-text { font-size: 14px; color: #555; margin-top: 4px; font-weight: normal; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>CMPRSS</h1>
-        <p>Private PDF Compression</p>
-        
         <div class="upload-box">
-            <input type="file" id="fileInput" accept=".pdf" />
-            <br><br>
+            <input type="file" id="fileInput" accept=".pdf" /><br><br>
             <button onclick="uploadFile()" id="btn">Compress PDF</button>
         </div>
-
+        <div id="progress-wrap" class="progress-wrap">
+            <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div id="progress-text" class="progress-text"></div>
         <div id="status"></div>
     </div>
-
     <script>
-        async function uploadFile() {
-            const fileInput = document.getElementById('fileInput');
-            const file = fileInput.files[0];
-            if (!file) return alert("Please select a file!");
-
+        function uploadFile() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return alert("Select a file!");
             const formData = new FormData();
             formData.append("file", file);
-
-            document.getElementById('status').innerText = "Uploading...";
+            document.getElementById('status').innerText = "";
+            document.getElementById('progress-wrap').classList.add('visible');
+            document.getElementById('progress-fill').style.width = '0%';
+            document.getElementById('progress-text').innerText = "Uploading… 0%";
             document.getElementById('btn').disabled = true;
-            
-            try {
-                const response = await fetch('/upload', { method: 'POST', body: formData });
-                const data = await response.json();
-                
-                if (data.job_id) {
-                    pollStatus(data.job_id);
-                } else {
-                    document.getElementById('status').innerText = "Error: " + JSON.stringify(data);
+            const xhr = new XMLHttpRequest();
+            xhr.upload.addEventListener('progress', function (e) {
+                if (e.lengthComputable) {
+                    var pct = Math.round((e.loaded / e.total) * 100);
+                    document.getElementById('progress-fill').style.width = pct + '%';
+                    document.getElementById('progress-text').innerText = "Uploading… " + pct + "%";
+                }
+            });
+            xhr.addEventListener('load', function () {
+                try {
+                    var data = JSON.parse(xhr.responseText);
+                    if (data.job_id) {
+                        document.getElementById('progress-fill').style.width = '100%';
+                        document.getElementById('progress-text').innerText = "Upload done.";
+                        pollStatus(data.job_id);
+                    } else {
+                        document.getElementById('progress-wrap').classList.remove('visible');
+                        document.getElementById('status').innerText = "Error: " + (data.error || xhr.status);
+                        document.getElementById('btn').disabled = false;
+                    }
+                } catch (e) {
+                    document.getElementById('progress-wrap').classList.remove('visible');
+                    document.getElementById('status').innerText = "Upload failed.";
                     document.getElementById('btn').disabled = false;
                 }
-            } catch (e) {
-                document.getElementById('status').innerText = "Upload Failed.";
+            });
+            xhr.addEventListener('error', function () {
+                document.getElementById('progress-wrap').classList.remove('visible');
+                document.getElementById('status').innerText = "Upload failed.";
                 document.getElementById('btn').disabled = false;
-            }
+            });
+            xhr.open('POST', '/upload');
+            xhr.send(formData);
         }
-
-        async function pollStatus(jobId) {
-            document.getElementById('status').innerText = "Processing... (This may take a few seconds)";
-            
-            const interval = setInterval(async () => {
-                const res = await fetch(`/status/${jobId}`);
+        function downloadUrl(jobId) {
+            return '/?action=download&job_id=' + encodeURIComponent(jobId);
+        }
+        async function downloadResult(jobId) {
+            if (!jobId || jobId === 'undefined') {
+                document.getElementById('status').innerHTML = 'Download failed: no job id';
+                return;
+            }
+            const url = downloadUrl(jobId);
+            try {
+                const res = await fetch(url);
+                if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || res.status); }
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'compressed.pdf';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } catch (e) { document.getElementById('status').innerHTML = 'Download failed: ' + e.message; }
+        }
+        function setProgress(percent, text) {
+            document.getElementById('progress-fill').style.width = Math.min(100, Math.max(0, percent)) + '%';
+            document.getElementById('progress-text').innerText = text;
+        }
+        function pollStatus(jobId) {
+            if (!jobId) return;
+            const timer = setInterval(async () => {
+                const res = await fetch('/status/' + encodeURIComponent(jobId));
                 const data = await res.json();
-                
-                if (data.status === 'done') {
-                    clearInterval(interval);
-                    document.getElementById('status').innerHTML = `<a href="${data.download_url}" class="download-btn" target="_blank">Download Compressed PDF</a>`;
+                const status = (data.status || '').trim();
+                const statusLower = status.toLowerCase();
+                const percent = parseInt(data.percent, 10) || 0;
+                if (statusLower === 'done') {
+                    clearInterval(timer);
+                    setProgress(100, 'Done');
+                    document.getElementById('progress-wrap').classList.remove('visible');
+                    if (jobId && String(jobId) !== 'undefined') {
+                        document.getElementById('status').innerHTML = 'Done. <a class="download-btn" href="' + downloadUrl(jobId) + '" download="compressed.pdf">Download PDF</a>';
+                    } else {
+                        document.getElementById('status').innerText = 'Download not available (invalid job). Try compressing again.';
+                    }
                     document.getElementById('btn').disabled = false;
+                } else if (statusLower.startsWith('error') || !res.ok) {
+                    clearInterval(timer);
+                    document.getElementById('progress-wrap').classList.remove('visible');
+                    document.getElementById('status').innerText = "Error: " + status;
+                    document.getElementById('btn').disabled = false;
+                } else {
+                    var msg = status === 'Queued' ? 'Queued…' : (percent >= 96 ? 'Finishing up…' : 'Compressing… ' + percent + '%');
+                    setProgress(percent, msg);
                 }
-            }, 2000);
+            }, 1500);
         }
     </script>
 </body>

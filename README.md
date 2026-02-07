@@ -7,7 +7,7 @@ A privacy-first, microservices-based PDF compression tool running on bare metal.
 This project utilizes a distributed microservices architecture orchestrated by Kubernetes (K3s).
 
 * **Ingress:** Cloudflare Tunnel (Zero Trust) with self-healing Liveness Probes.
-* **Frontend:** FastAPI (Python) - Lightweight, async web server.
+* **Frontend:** Flask (Python) - Lightweight web server.
 * **Message Broker:** Redis - Handles job queues and decoupling.
 * **Worker:** Python + Ghostscript - Dedicated container for PDF processing.
 * **Storage:** Ephemeral shared volumes.

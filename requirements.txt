@@ -1,6 +1,4 @@
-fastapi
-uvicorn[standard]
-python-multipart
+flask
+gunicorn
 jinja2
 redis
-rq

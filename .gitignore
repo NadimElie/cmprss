@@ -14,3 +14,7 @@ venv/
 # System Junk
 .DS_Store
 k3s-cmprss.yaml
+tunnel.yaml
+cloudflared.deb
+*.json
+.env
