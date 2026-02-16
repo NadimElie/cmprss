@@ -1,14 +1,17 @@
 FROM python:3.11-slim-bookworm
 
+# NIST State Containment: Prevent Python from writing unpredictable .pyc files
 ENV PYTHONDONTWRITEBYTECODE=1
+# Enforce explicit stderr/stdout logging without buffering
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# If apt times out, build with: docker build --network=host -t ...
+# Hardened OS Dependencies: Added libmagic1 for strict MIME validation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ghostscript \
     gsfonts \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

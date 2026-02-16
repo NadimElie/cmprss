@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  redis-test:
+    image: redis:5.0.1
+    container_name: cmprss-redis-test
+    networks:
+      - cmprss-test-net
+    ports:
+      - "6380:6379" # Mapped to 6380 to avoid conflicts with any local Redis
+
+  web-test:
+    image: docker.io/nadimelie/cmprss:v21
+    container_name: cmprss-web-test
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_HOST=redis-test
+      # We explicitly map the environment variables to enforce the Zero-Trust startup checks
+    volumes:
+      - cmprss-test-data:/data
+    networks:
+      - cmprss-test-net
+    depends_on:
+      - redis-test
+
+  worker-test:
+    image: docker.io/nadimelie/cmprss:v21
+    container_name: cmprss-worker-test
+    command: ["python", "worker.py"]
+    environment:
+      - REDIS_HOST=redis-test
+    volumes:
+      - cmprss-test-data:/data
+    networks:
+      - cmprss-test-net
+    depends_on:
+      - redis-test
+
+networks:
+  cmprss-test-net:
+    driver: bridge
+
+volumes:
+  cmprss-test-data:
+    # This perfectly simulates your k3s ReadWriteMany PVC

@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "7"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"cmprss-tunnel","namespace":"default"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"cmprss-tunnel"}},"template":{"metadata":{"labels":{"app":"cmprss-tunnel"}},"spec":{"containers":[{"args":["tunnel","--config","/etc/cloudflared/config.yml","run","cmprss-prod"],"image":"cloudflare/cloudflared:latest","name":"cloudflared","volumeMounts":[{"mountPath":"/etc/cloudflared","name":"config","readOnly":true}]}],"hostNetwork":true,"volumes":[{"hostPath":{"path":"/home/nad/.cloudflared"},"name":"config"}]}}}}
+  creationTimestamp: "2026-02-05T16:20:47Z"
+  generation: 7
+  name: cmprss-tunnel
+  namespace: default
+  resourceVersion: "58055"
+  uid: f102b971-ede6-4c16-a294-afe3366cfbc0
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: cmprss-tunnel
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cmprss-tunnel
+    spec:
+      containers:
+      - args:
+        - tunnel
+        - --config
+        - /etc/cloudflared/config.yml
+        - --metrics
+        - 0.0.0.0:2000
+        - --protocol
+        - http2
+        - run
+        - cmprss-safe
+        image: cloudflare/cloudflared:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          successThreshold: 1
+          tcpSocket:
+            port: 2000
+          timeoutSeconds: 5
+        name: cloudflared
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/cloudflared
+          name: config
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: true
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /home/nad/.cloudflared
+          type: ""
+        name: config
+status:
+  conditions:
+  - lastTransitionTime: "2026-02-05T16:20:47Z"
+    lastUpdateTime: "2026-02-06T14:50:09Z"
+    message: ReplicaSet "cmprss-tunnel-69b656f967" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  - lastTransitionTime: "2026-02-06T15:41:55Z"
+    lastUpdateTime: "2026-02-06T15:41:55Z"
+    message: Deployment does not have minimum availability.
+    reason: MinimumReplicasUnavailable
+    status: "False"
+    type: Available
+  observedGeneration: 7
+  replicas: 1
+  unavailableReplicas: 1
+  updatedReplicas: 1
